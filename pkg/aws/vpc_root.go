@@ -154,13 +154,15 @@ func deleteVPC(sessions AWSSessions, options AwsOptions, VpcList []VpcInfo) erro
 		}
 
 		DeleteLoadBalancerByVpcId(sessions.ELB, vpc, options.DryRun)
+		DeleteVpcEndpointsByVpcId(ec2Session, vpc.Identifier)
+		DeleteVpcPeeringConnectionsByVpcId(ec2Session, vpc.Identifier)
+		DeleteNatGatewaysByIds(ec2Session, vpc.NatGateways)
 		DeleteNetworkInterfacesByVpcId(ec2Session, vpc.Identifier)
 		ReleaseElasticIps(ec2Session, vpc.ElasticIps)
-		DeleteSecurityGroupsByIds(ec2Session, vpc.SecurityGroups)
 		DeleteInternetGatewaysByIds(ec2Session, vpc.InternetGateways, vpc.Identifier)
-		DeleteSubnetsByIds(ec2Session, vpc.Subnets)
 		DeleteRouteTablesByIds(ec2Session, vpc.RouteTables)
-		DeleteNatGatewaysByIds(ec2Session, vpc.NatGateways)
+		DeleteSecurityGroupsByIds(ec2Session, vpc.SecurityGroups)
+		DeleteSubnetsByIds(ec2Session, vpc.Subnets)
 
 		_, deleteErr := ec2Session.DeleteVpc(
 			&ec2.DeleteVpcInput{
