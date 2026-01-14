@@ -10,21 +10,30 @@ variables:
   DOCKER_BUILDKIT: 1
   DOCKER_TLS_CERTDIR: ""
 
+# Resource allocation templates for k8s-runner
+.resources-default:
+  variables:
+    KUBERNETES_CPU_REQUEST: "250m"
+    KUBERNETES_MEMORY_REQUEST: "1Gi"
+    KUBERNETES_MEMORY_LIMIT: "1Gi"
+
 stages:
   - release
   - deploy
 
 release-new-image:
   stage: release
+  extends: [.resources-default]
   script:
     - sleep 10m # sleep 10 minutes since chart release isn't instant on tags push
   only:
     - tags
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 build-new-image:
   stage: release
+  extends: [.resources-default]
   before_script:
     - ci_helper init_buildkit_builder "${CI_JOB_NAME}" 2 4
     - ci_helper docker_login_public_prod_ecr
@@ -36,20 +45,22 @@ build-new-image:
   only:
     - tags
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 scaleway-test-cluster:
   stage: deploy
+  extends: [.resources-default]
   script:
     - helm --kubeconfig $KUBECONFIG_SCW_TEST_CLUSTER upgrade --install --wait -n kube-system -f $PLECO_VALUES_SCALEWAY --create-namespace pleco-scaleway charts/pleco
   only:
     - tags
     - schedules
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 gcp-test-cluster:
   stage: deploy
+  extends: [.resources-default]
   script:
     - gcloud auth activate-service-account $(cat $GKE_GCP_CREDENTIALS_JSON | jq -r .client_email) --key-file=$GKE_GCP_CREDENTIALS_JSON
     - gcloud container clusters get-credentials $GKE_GCP_TEST_CLUSTER_NAME --region=$GKE_GCP_DEFAULT_REGION --project=$(cat $GKE_GCP_CREDENTIALS_JSON | jq -r .project_id)
@@ -58,34 +69,37 @@ gcp-test-cluster:
     - tags
     - schedules
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 eks-test-cluster:
   stage: deploy
+  extends: [.resources-default]
   script:
     - AWS_ACCESS_KEY_ID=$EKS_AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$EKS_AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION=$EKS_AWS_DEFAULT_REGION helm --kubeconfig $KUBECONFIG_EKS_TEST_CLUSTER upgrade --install --wait -n kube-system -f $PLECO_VALUES_EKS --create-namespace pleco-eks charts/pleco
   only:
     - tags
     - schedules
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 aws-sandbox:
   stage: deploy
+  extends: [.resources-default]
   script:
     - AWS_ACCESS_KEY_ID=$EKS_AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY=$EKS_AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION=$EKS_AWS_DEFAULT_REGION helm --kubeconfig $KUBECONFIG_EKS_TEST_CLUSTER upgrade --install --wait -n kube-system -f $PLECO_VALUES_SANDBOX --create-namespace pleco-sandbox charts/pleco
   only:
     - tags
     - schedules
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
 
 azure-test-cluster:
   stage: deploy
+  extends: [.resources-default]
   script:
     - AZURE_CLIENT_ID=$AZURE_CLIENT_ID AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET AZURE_TENANT_ID=$AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID helm --kubeconfig $KUBECONFIG_AZURE_TEST_CLUSTER upgrade --install --wait -n kube-system -f $PLECO_VALUES_AZURE --create-namespace pleco-azure charts/pleco
   only:
     - tags
     - schedules
   tags:
-    - vm-250mcpu-1gmem-0g
+    - k8s-runner
