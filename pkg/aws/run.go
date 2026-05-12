@@ -135,7 +135,8 @@ func runPlecoInRegion(region string, interval int64, wg *sync.WaitGroup, options
 	if options.EnableELB {
 		sessions.EKS = eks.New(currentSession)
 		sessions.ELB = elbv2.New(currentSession)
-		listServiceToCheckStatus = append(listServiceToCheckStatus, DeleteExpiredLoadBalancers)
+		sessions.EC2 = ec2.New(currentSession)
+		listServiceToCheckStatus = append(listServiceToCheckStatus, DeleteExpiredLoadBalancers, DeleteOrphanedTargetGroups, DeleteOrphanedLBCSecurityGroups)
 	}
 
 	// EBS connection
