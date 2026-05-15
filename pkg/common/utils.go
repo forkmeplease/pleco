@@ -212,15 +212,19 @@ func ElemToDeleteFormattedInfos(elemName string, arraySize int, region string, i
 }
 
 func IsAssociatedToLivingCluster(tagsInput interface{}, svc *eks.EKS) bool {
-	result, clusterErr := svc.ListClusters(&eks.ListClustersInput{})
+	var clusters []*string
+	clusterErr := svc.ListClustersPages(&eks.ListClustersInput{}, func(page *eks.ListClustersOutput, _ bool) bool {
+		clusters = append(clusters, page.Clusters...)
+		return true
+	})
 	if clusterErr != nil {
-		log.Error("Can't list cluster for ELB association check")
-		return false
+		log.Errorf("Can't list clusters for ELB association check: %s. Skipping orphan ELB detection for safety.", clusterErr.Error())
+		return true
 	}
 
 	switch typedTags := tagsInput.(type) {
 	case []*elbv2.Tag:
-		for _, cluster := range result.Clusters {
+		for _, cluster := range clusters {
 			for _, tag := range typedTags {
 				// ALB controller key contains '/cluster' and cluster name is the value
 				if strings.Contains(*tag.Key, "/cluster") && *tag.Value == *cluster {
@@ -233,7 +237,7 @@ func IsAssociatedToLivingCluster(tagsInput interface{}, svc *eks.EKS) bool {
 			}
 		}
 	case []*ec2.Tag:
-		for _, cluster := range result.Clusters {
+		for _, cluster := range clusters {
 			for _, tag := range typedTags {
 				if strings.Contains(*tag.Key, "/cluster/") && strings.Contains(*tag.Key, *cluster) {
 					return true
