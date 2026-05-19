@@ -192,6 +192,46 @@ func DeleteExpiredVPCs(sessions GCPSessions, options GCPOptions) {
 			}
 		}
 
+		// Delete firewall rules
+		// GKE auto-creates firewall rules (e.g. `k8s-*-node-http-hc`, `gke-*`) that
+		// outlive the cluster when cluster deletion fails mid-way, and they pin the VPC.
+		// A separate context is used for listing because GKE-heavy VPCs may have many
+		// rules and the per-rule delete waits can exceed the outer 30s budget.
+		log.Info(fmt.Sprintf("Get firewall rules for `%s`", network.GetName()))
+		ctxListFirewalls, cancelListFirewalls := context.WithTimeout(context.Background(), time.Minute*5)
+		firewallsIterator := sessions.Firewall.List(ctxListFirewalls, &computepb.ListFirewallsRequest{
+			Project: options.ProjectID,
+			Filter:  &networkFilter,
+		})
+		for {
+			firewall, err := firewallsIterator.Next()
+			if err != nil {
+				break
+			}
+
+			if firewall.GetNetwork() == network.GetSelfLink() {
+				log.Info(fmt.Sprintf("Deleting firewall rule `%s`", firewall.GetName()))
+				ctxDeleteFirewall, cancelDeleteFirewall := context.WithTimeout(context.Background(), time.Second*60)
+				operation, err := sessions.Firewall.Delete(ctxDeleteFirewall, &computepb.DeleteFirewallRequest{
+					Project:  options.ProjectID,
+					Firewall: firewall.GetName(),
+				})
+				if err != nil {
+					log.Error(fmt.Sprintf("Error deleting firewall rule `%s`, error: %s", firewall.GetName(), err))
+				}
+
+				if operation != nil {
+					err = operation.Wait(ctxDeleteFirewall)
+					if err != nil {
+						log.Error(fmt.Sprintf("Error waiting for deleting firewall rule `%s`, error: %s", firewall.GetName(), err))
+					}
+				}
+
+				cancelDeleteFirewall()
+			}
+		}
+		cancelListFirewalls()
+
 		// closing contexts
 		cancelGetNetwork()
 

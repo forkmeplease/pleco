@@ -38,6 +38,7 @@ type GCPSessions struct {
 	Network          *compute.NetworksClient
 	Subnetwork       *compute.SubnetworksClient
 	Route            *compute.RoutesClient
+	Firewall         *compute.FirewallsClient
 	Router           *compute.RoutersClient
 	IAM              *iam.Service
 	CRM              *cloudresourcemanager.Service
@@ -123,6 +124,14 @@ func runPlecoInRegion(location string, interval int64, wg *sync.WaitGroup, optio
 		}
 		defer routeClient.Close()
 		sessions.Route = routeClient
+
+		firewallClient, err := compute.NewFirewallsRESTClient(ctx)
+		if err != nil {
+			logrus.Errorf("compute.NewFirewallsRESTClient: %s", err)
+			return
+		}
+		defer firewallClient.Close()
+		sessions.Firewall = firewallClient
 
 		listServiceToCheckStatus = append(listServiceToCheckStatus, DeleteExpiredVPCs)
 	}
