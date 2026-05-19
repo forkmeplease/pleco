@@ -85,13 +85,35 @@ func ListExpiredLoadBalancers(eksSession *eks.EKS, lbSession *elbv2.ELBV2, optio
 			}
 		}
 
-		if !currentLb.IsProtected && (!common.IsAssociatedToLivingCluster(currentLb.Tags, eksSession) || currentLb.IsResourceExpired(options.TagValue, options.DisableTTLCheck)) {
+		if currentLb.TTL == 0 {
+			log.Debugf("Skipping load balancer %s in region %s (ttl=0)", currentLb.Identifier, *lbSession.Config.Region)
+			continue
+		}
+
+		isAssociatedToCluster := common.IsAssociatedToLivingCluster(currentLb.Tags, eksSession)
+		isExpired := currentLb.IsResourceExpired(options.TagValue, options.DisableTTLCheck)
+		if !isAssociatedToCluster {
+			log.Debugf("Load balancer %s is considered orphan (cluster association not found). tags=%v", currentLb.Identifier, extractLBTagKeys(currentLb.Tags))
+		}
+
+		if !currentLb.IsProtected && (!isAssociatedToCluster || isExpired) {
 			log.Infof("Load Balancer found to delete: %s (vpc = %s)", currentLb.Arn, currentLb.VpcId)
 			taggedLoadBalancers = append(taggedLoadBalancers, currentLb)
 		}
 	}
 
 	return taggedLoadBalancers, nil
+}
+
+func extractLBTagKeys(tags []*elbv2.Tag) []string {
+	keys := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if tag == nil || tag.Key == nil {
+			continue
+		}
+		keys = append(keys, *tag.Key)
+	}
+	return keys
 }
 
 func ListLoadBalancers(lbSession *elbv2.ELBV2, tagName string) ([]ElasticLoadBalancer, error) {
