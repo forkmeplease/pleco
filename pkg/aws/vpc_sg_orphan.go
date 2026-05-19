@@ -3,6 +3,7 @@ package aws
 import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/Qovery/pleco/pkg/common"
@@ -11,7 +12,7 @@ import (
 func DeleteOrphanedLBCSecurityGroups(sessions AWSSessions, options AwsOptions) {
 	region := *sessions.EC2.Config.Region
 
-	orphaned, err := listOrphanedLBCSecurityGroups(sessions.EC2)
+	orphaned, err := listOrphanedLBCSecurityGroups(sessions.EC2, sessions.ELB)
 	if err != nil {
 		log.Errorf("Can't list orphaned LBC security groups in %s: %s", region, err)
 		return
@@ -28,7 +29,7 @@ func DeleteOrphanedLBCSecurityGroups(sessions AWSSessions, options AwsOptions) {
 	DeleteSecurityGroupsByIds(sessions.EC2, orphaned)
 }
 
-func listOrphanedLBCSecurityGroups(ec2Session *ec2.EC2) ([]SecurityGroup, error) {
+func listOrphanedLBCSecurityGroups(ec2Session *ec2.EC2, elbSession *elbv2.ELBV2) ([]SecurityGroup, error) {
 	// Collect all SG IDs currently referenced by an ENI.
 	usedSGIds := map[string]struct{}{}
 	err := ec2Session.DescribeNetworkInterfacesPages(
@@ -46,7 +47,25 @@ func listOrphanedLBCSecurityGroups(ec2Session *ec2.EC2) ([]SecurityGroup, error)
 		return nil, err
 	}
 
-	// Find k8s-* SGs not referenced by any ENI.
+	// Also protect SGs attached to any load balancer. During LB provisioning, SGs may exist before ENIs do.
+	if elbSession != nil {
+		err = elbSession.DescribeLoadBalancersPages(
+			&elbv2.DescribeLoadBalancersInput{},
+			func(page *elbv2.DescribeLoadBalancersOutput, _ bool) bool {
+				for _, lb := range page.LoadBalancers {
+					for _, sgID := range lb.SecurityGroups {
+						usedSGIds[aws.StringValue(sgID)] = struct{}{}
+					}
+				}
+				return true
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Find k8s-* SGs not referenced by any ENI or load balancer.
 	var orphaned []SecurityGroup
 	err = ec2Session.DescribeSecurityGroupsPages(
 		&ec2.DescribeSecurityGroupsInput{
